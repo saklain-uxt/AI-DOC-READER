@@ -1,0 +1,29 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Node dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Ignore redundant outer frontend files
+/FRONTEND/package.json
+/FRONTEND/package-lock.json
+/FRONTEND/node_modules/

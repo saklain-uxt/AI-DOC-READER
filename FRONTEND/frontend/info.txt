@@ -1,0 +1,25 @@
+localStorage persists data, but JavaScript can read it.
+
+
+
+sessionStorage normally lasts for the browser tab's session, but JavaScript can read it.
+
+
+
+HttpOnly cookies prevent JavaScript from reading the cookie value, but require careful CSRF and cookie configuration.
+
+
+The browser automatically sends eligible cookies in the Cookie HTTP header, including the CSRF cookie and authentication cookie. However, React must manually read the CSRF token from the CSRF cookie and send it in the X-CSRF-Token header. FastAPI then compares the cookie token with the header token to validate the CSRF request.
+
+1. request.cookies.get("csrf_token")
+- Comes from the Cookie header sent automatically by the browser.
+- Retrieves the value of the csrf_token cookie.
+
+2. request.headers.get("X-CSRF-Token")
+- Comes from the custom HTTP request header added by your React code.
+- Retrieves the value associated with X-CSRF-Token.
+
+
+document.cookie → JavaScript reads accessible cookies in the browser.
+request.cookies.get("csrf_token") → FastAPI reads the cookie sent by the browser.
+request.headers.get("X-CSRF-Token") → FastAPI reads the separate CSRF header added by React.
