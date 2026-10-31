@@ -5,6 +5,7 @@ from bson import ObjectId
 def create_user_document(
     name: str,
     email: str,
+    
     hashed_password: str
 ) -> dict:
     return {

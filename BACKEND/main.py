@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import FRONTEND_ORIGIN
 from database.database import lifespan
-from routers.auth import router as auth_router
+from routers.auth_router import router as auth_router
 
 app = FastAPI(
     title="AI Knowledge Hub API",

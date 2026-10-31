@@ -11,7 +11,7 @@ export const useAuthStore = create((set) => ({
     set({ loading: true, error: null });
 
     try {
-      await initializeCsrf();
+      //  await initializeCsrf();
 
       const user = await authApi.me();
       set({ user, loading: false });
@@ -35,7 +35,7 @@ export const useAuthStore = create((set) => ({
     set({ error: null });
 
     try {
-      await initializeCsrf();
+      // await initializeCsrf();
 
       await authApi.login(payload);
 
