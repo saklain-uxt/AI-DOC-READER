@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import FRONTEND_ORIGIN
 from database.database import lifespan
 from routers.auth_router import router as auth_router
+from routers.document_router import router as document_router
+
 
 app = FastAPI(
     title="AI Knowledge Hub API",
@@ -20,6 +22,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(document_router)
 
 
 @app.get("/api/health")

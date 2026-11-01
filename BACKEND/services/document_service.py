@@ -1,0 +1,455 @@
+import asyncio
+import logging
+import uuid
+
+from pathlib import Path
+
+import cloudinary
+import cloudinary.uploader
+import cloudinary.utils
+
+from bson import ObjectId
+from bson.errors import InvalidId
+
+from fastapi import UploadFile, HTTPException
+
+from core.config import (
+    MAX_FILE_SIZE_BYTES,
+    MAX_FILE_SIZE_MB,
+    ALLOWED_FILE_TYPES
+)
+
+from models.document_model import create_document_model
+
+logger=logging.getLogger(__name__)
+
+## validate uplode file
+
+def validate_file(file:UploadFile):
+
+        """
+    Validates the filename, extension and MIME type.
+
+    Supported:
+    PDF, JPG, JPEG, PNG and WEBP.
+    """
+
+        if not file.filename:
+                raise HTTPException(status_code=400,detail="Filename is required")
+        
+        extension = Path(file.filename).suffix.lower()
+
+        expected_mime = ALLOWED_FILE_TYPES.get(extension)
+
+        if expected_mime is None:
+                raise HTTPException(status_code=400,detail="Unsupported file extension")
+
+        if file.content_type != expected_mime:
+                raise HTTPException(
+                   status_code=400,
+                   detail="Invalid file MIME type")
+        
+        return extension
+
+        
+
+# --------------------------------------------------
+# 2. Validate actual file signature
+# --------------------------------------------------
+def validate_file_signature(content: bytes, extension: str) -> bool:
+    """
+    Checks the actual file signature (magic bytes)
+    to verify that the file matches its extension.
+    """
+
+    signatures = {
+        ".pdf": [b"%PDF"],
+        ".jpg": [b"\xff\xd8\xff"],
+        ".jpeg": [b"\xff\xd8\xff"],
+        ".png": [b"\x89PNG\r\n\x1a\n"],
+        ".webp": [b"RIFF"],
+    }
+
+    allowed_signatures = signatures.get(extension.lower())
+
+    if not allowed_signatures:
+        return False
+
+    # Check whether the file starts with an expected signature
+    return any(
+        content.startswith(signature)
+        for signature in allowed_signatures
+    )
+
+
+
+# --------------------------------------------------
+# 3. Generate Cloudinary delivery URL
+# --------------------------------------------------
+
+def generate_delivery_url(
+    public_id: str,
+    resource_type: str
+):
+    """
+    Generates a signed Cloudinary delivery URL.
+
+    Uses authenticated delivery so the uploaded
+    files are not ordinary public assets.
+    """
+
+    url, options = cloudinary.utils.cloudinary_url(
+        public_id,
+        resource_type=resource_type,
+        type="authenticated",
+        secure=True,
+        sign_url=True
+    )
+
+    return url
+# --------------------------------------------------
+# 4. Serialize MongoDB document
+# --------------------------------------------------
+
+def serialize_document(document: dict):
+    """
+    Converts MongoDB ObjectId into a string.
+
+    Generates a delivery URL and excludes internal
+    fields such as user_id and public_id.
+    """
+
+    return {
+        "id": str(document["_id"]),
+
+        "filename": document["filename"],
+
+        "delivery_url": generate_delivery_url(
+            document["public_id"],
+            document["resource_type"]
+        ),
+
+        "resource_type": document["resource_type"],
+
+        "mime_type": document["mime_type"],
+
+        "file_size": document["file_size"],
+
+        "status": document["status"],
+
+        "total_pages": document.get("total_pages"),
+
+        "total_chunks": document.get("total_chunks", 0),
+
+        "created_at": document["created_at"]
+    }
+
+
+# --------------------------------------------------
+# 5. Validate MongoDB document ID
+# --------------------------------------------------
+
+def validate_document_id(document_id: str):
+    """
+    Converts the document ID into MongoDB ObjectId.
+
+    Returns HTTP 400 if the ID is invalid.
+    """
+
+    try:
+        return ObjectId(document_id)
+
+    except (InvalidId, TypeError):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid document ID"
+        )
+
+
+# --------------------------------------------------
+# 6. Upload document
+# --------------------------------------------------
+async def upload_document_service(
+    file: UploadFile,
+    user_id: str,
+    collection
+):
+    """
+    Uploads PDF/image to Cloudinary and stores
+    its metadata in MongoDB.
+
+    Workflow:
+
+    1. Validate file.
+    2. Read file with size limit.
+    3. Validate file signature.
+    4. Select Cloudinary resource type.
+    5. Generate unique public ID.
+    6. Upload to Cloudinary.
+    7. Save metadata in MongoDB.
+    8. Return document response.
+
+    If MongoDB insertion fails, the Cloudinary
+    asset is deleted as a cleanup operation.
+    """
+
+    try:
+        # Validate file extension and MIME type.
+        extension = validate_file(file)
+
+        # Read at most maximum allowed size + 1 byte.
+        content = await file.read(
+            MAX_FILE_SIZE_BYTES + 1
+        )
+
+        if not content:
+            raise HTTPException(
+                status_code=400,
+                detail="Uploaded file is empty"
+            )
+
+        # Check maximum file size.
+        if len(content) > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Maximum allowed file size is "
+                    f"{MAX_FILE_SIZE_MB} MB"
+                )
+            )
+
+        # Verify actual binary signature.
+        validate_file_signature(
+            content,
+            extension
+        )
+
+        # Images use image resource type.
+        # PDFs use raw resource type.
+        resource_type = (
+            "raw" if extension == ".pdf"
+            else "image"
+        )
+
+        # Generate unique Cloudinary public ID.
+        unique_id = str(uuid.uuid4())
+
+        public_id = (
+            f"ai_knowledge_hub/{user_id}/{unique_id}"
+        )
+
+        # Raw PDF public IDs include their extension.
+        if resource_type == "raw":
+            public_id += ".pdf"
+
+        upload_result = None
+
+        try:
+            # Upload the file to Cloudinary.
+            upload_result = await asyncio.to_thread(
+                cloudinary.uploader.upload,
+                content,
+                public_id=public_id,
+                resource_type=resource_type,
+                type="authenticated",
+                overwrite=False,
+                unique_filename=False
+            )
+
+            # Create MongoDB metadata.
+            document_data = create_document_model(
+                user_id=user_id,
+
+                filename=Path(file.filename).name,
+
+                public_id=upload_result["public_id"],
+
+                asset_id=upload_result["asset_id"],
+
+                resource_type=resource_type,
+
+                mime_type=file.content_type,
+
+                file_size=len(content)
+            )
+
+            # Save metadata in MongoDB.
+            result = await collection.insert_one(
+                document_data
+            )
+
+            document_data["_id"] = result.inserted_id
+
+            return serialize_document(document_data)
+
+        except Exception:
+            # If Cloudinary succeeded but MongoDB failed,
+            # remove the uploaded Cloudinary asset.
+            if upload_result:
+                try:
+                    await asyncio.to_thread(
+                        cloudinary.uploader.destroy,
+                        upload_result["public_id"],
+                        resource_type=resource_type,
+                        type="authenticated"
+                    )
+
+                except Exception:
+                    logger.exception(
+                        "Cloudinary cleanup failed"
+                    )
+
+            raise
+
+    finally:
+        # Always close the uploaded file.
+        await file.close()
+
+
+
+
+# --------------------------------------------------
+# 7. Get all user documents
+# --------------------------------------------------
+async def get_all_documents_service(
+    user_id: str,
+    collection
+):
+    """
+    Returns all documents owned by the authenticated user.
+
+    Sorts documents by newest first.
+    """
+
+    cursor = collection.find(
+        {"user_id": user_id}
+    ).sort(
+        "created_at", -1
+    )
+
+    documents = []
+
+    async for document in cursor:
+        documents.append(
+            serialize_document(document)
+        )
+
+    return {
+        "documents": documents,
+        "total": len(documents)
+    }                
+         
+
+      
+# --------------------------------------------------
+# 8. Get document by ID
+# --------------------------------------------------
+
+async def get_document_by_id_service(
+    document_id: str,
+    user_id: str,
+    collection
+):
+    """
+    Retrieves one document using its MongoDB ID.
+
+    Checks both document ID and authenticated user ID.
+    """
+
+    object_id = validate_document_id(document_id)
+
+    document = await collection.find_one({
+        "_id": object_id,
+        "user_id": user_id
+    })
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found"
+        )
+
+    return serialize_document(document)
+
+
+# --------------------------------------------------
+# 9. Delete document
+# --------------------------------------------------
+
+async def delete_document_service(
+    document_id: str,
+    user_id: str,
+    collection
+):
+    """
+    Deletes a document from Cloudinary and MongoDB.
+
+    First checks document ownership.
+
+    Then deletes the Cloudinary file.
+    Finally removes MongoDB metadata.
+
+    If Cloudinary deletion fails, metadata remains
+    so that the deletion can be retried.
+    """
+
+    object_id = validate_document_id(document_id)
+
+    # Find only the current user's document.
+    document = await collection.find_one({
+        "_id": object_id,
+        "user_id": user_id
+    })
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found"
+        )
+
+    try:
+        # Delete original file from Cloudinary.
+        result = await asyncio.to_thread(
+            cloudinary.uploader.destroy,
+            document["public_id"],
+            resource_type=document["resource_type"],
+            type="authenticated"
+        )
+
+        if result.get("result") not in {
+            "ok",
+            "not found"
+        }:
+            raise HTTPException(
+                status_code=502,
+                detail="Cloudinary deletion failed"
+            )
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        logger.exception(
+            "Cloudinary deletion failed"
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to delete cloud file"
+        )
+
+    # Delete MongoDB metadata.
+    delete_result = await collection.delete_one({
+        "_id": object_id,
+        "user_id": user_id
+    })
+
+    if delete_result.deleted_count == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Document metadata not found"
+        )
+
+    return {
+        "message": "Document deleted successfully"
+    }    
