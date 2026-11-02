@@ -78,6 +78,16 @@ export async function apiRequest(path, options = {}) {
     headers[CSRF_HEADER] = readCookie(CSRF_COOKIE) || csrfToken;
   }
 
+console.log("========== API DEBUG ==========");
+console.log("API URL:", API_URL);
+console.log("Request path:", path);
+console.log("Full URL:", `${API_URL}${path}`);
+console.log("Method:", method);
+console.log("Headers:", headers);
+console.log("Frontend origin:", window.location.origin);
+console.log("CSRF cookie:", readCookie(CSRF_COOKIE));
+console.log("================================");
+
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     method,

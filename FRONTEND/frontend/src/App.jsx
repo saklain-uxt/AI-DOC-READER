@@ -1,6 +1,7 @@
 
 import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import PDFPreview from "./pages/PDFPreview";
 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -22,8 +23,16 @@ function AppRoutes() {
       <Route path="/register" element={<Register />} />
 
       <Route element={<ProtectedRoute />}>
+       {/* PDF Preview Page */}
+        <Route
+          path="/documents/:documentId"
+          element={<PDFPreview />}
+        />
         <Route path="/dashboard" element={<Dashboard />} />
       </Route>
+
+      
+      
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
