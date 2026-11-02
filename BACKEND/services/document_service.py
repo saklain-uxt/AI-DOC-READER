@@ -2,6 +2,14 @@ import asyncio
 import logging
 import uuid
 
+import urllib.request
+import urllib.error
+
+from urllib.parse import quote
+
+
+from fastapi.responses import Response
+
 from pathlib import Path
 
 import cloudinary
@@ -452,4 +460,156 @@ async def delete_document_service(
 
     return {
         "message": "Document deleted successfully"
-    }    
+    }  
+
+
+
+# --------------------------------------------------
+# 10. Retrieve PDF file for preview
+# --------------------------------------------------
+
+async def get_document_file_service(
+    document_id: str,
+    user_id: str,
+    collection
+):
+    """
+    Retrieves an authenticated user's PDF from Cloudinary.
+
+    Workflow:
+    1. Validate MongoDB document ID.
+    2. Verify document ownership.
+    3. Verify PDF file type.
+    4. Generate temporary signed download URL.
+    5. Download PDF from Cloudinary.
+    6. Return PDF binary response to frontend.
+    """
+
+    # 1. Validate MongoDB document ID
+    object_id = validate_document_id(document_id)
+
+    # 2. Find document belonging to authenticated user
+    document = await collection.find_one({
+        "_id": object_id,
+        "user_id": user_id
+    })
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found"
+        )
+
+    # 3. Verify PDF file
+    if document.get("mime_type") != "application/pdf":
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files can be previewed"
+        )
+
+    if document.get("resource_type") != "raw":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid PDF resource type"
+        )
+
+    # 4. Generate temporary authenticated download URL
+    try:
+        download_url = await asyncio.to_thread(
+            cloudinary.utils.private_download_url,
+            document["public_id"],
+            "pdf",
+            resource_type="raw",
+            type="authenticated",
+            attachment=False
+        )
+
+    except Exception:
+        logger.exception(
+            "Cloudinary download URL generation failed"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate PDF download URL"
+        )
+
+    # 5. Download PDF bytes from Cloudinary
+    def download_pdf():
+
+        with urllib.request.urlopen(
+            download_url,
+            timeout=60
+        ) as response:
+
+            content = response.read(
+                MAX_FILE_SIZE_BYTES + 1
+            )
+
+            return content
+
+    try:
+        content = await asyncio.to_thread(download_pdf)
+
+    except urllib.error.HTTPError as exc:
+
+        cloudinary_error = exc.headers.get(
+            "x-cld-error",
+            "No additional error information"
+        )
+
+        logger.error(
+            "Cloudinary download failed: HTTP %s - %s",
+            exc.code,
+            cloudinary_error
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail="Cloudinary rejected the PDF download"
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Cloudinary PDF download failed"
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to retrieve PDF from Cloudinary"
+        )
+
+    # 6. Validate downloaded content
+    if not content:
+        raise HTTPException(
+            status_code=502,
+            detail="Retrieved PDF is empty"
+        )
+
+    if len(content) > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=502,
+            detail="PDF exceeds the maximum allowed size"
+        )
+
+    if not content.startswith(b"%PDF"):
+        raise HTTPException(
+            status_code=502,
+            detail="Cloudinary returned an invalid PDF"
+        )
+
+    # 7. Return PDF binary response
+    filename = document["filename"]
+
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f"inline; filename*=UTF-8''{quote(filename)}"
+            ),
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store"
+        }
+    )

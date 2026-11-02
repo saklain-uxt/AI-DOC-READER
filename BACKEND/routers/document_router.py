@@ -17,7 +17,8 @@ from controller.document_controller import (
     upload_document_controller,
     get_all_documents_controller,
     get_document_by_id_controller,
-    delete_document_controller
+    delete_document_controller,
+    get_document_file_controller
 )
 
 # Response schemas.
@@ -146,3 +147,23 @@ async def delete_document(
         current_user=current_user,
         collection=collection
     )
+
+@router.get("/{document_id}/file")
+async def get_document_file(
+    document_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    GET /api/documents/{document_id}/file
+
+    Retrieves the actual PDF file for preview.
+    """
+
+    collection = request.app.state.db["documents"]
+
+    return await get_document_file_controller(
+        document_id=document_id,
+        current_user=current_user,
+        collection=collection
+    )    

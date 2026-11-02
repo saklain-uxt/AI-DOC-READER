@@ -4,7 +4,8 @@ from services.document_service import (
     upload_document_service,
     get_all_documents_service,
     get_document_by_id_service,
-    delete_document_service
+    delete_document_service,
+    get_document_file_service
 
       
 )
@@ -106,3 +107,24 @@ async def delete_document_controller(
         user_id=user_id,
         collection=collection
     )
+
+
+async def get_document_file_controller(
+    document_id,
+    current_user,
+    collection
+):
+    """
+    Handles PDF preview requests.
+
+    Retrieves only documents belonging
+    to the authenticated user.
+    """
+
+    user_id = extract_user_id(current_user)
+
+    return await get_document_file_service(
+        document_id=document_id,
+        user_id=user_id,
+        collection=collection
+    )    
