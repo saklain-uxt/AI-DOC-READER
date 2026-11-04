@@ -18,7 +18,9 @@ from controller.document_controller import (
     get_all_documents_controller,
     get_document_by_id_controller,
     delete_document_controller,
-    get_document_file_controller
+    get_document_file_controller,
+    extract_document_text_controller
+
 )
 
 # Response schemas.
@@ -167,3 +169,26 @@ async def get_document_file(
         current_user=current_user,
         collection=collection
     )    
+
+
+@router.get("/{document_id}/extract")
+async def extract_document_text(
+    document_id:str,
+    request:Request,
+    current_user:dict=Depends(get_current_user)
+):
+     """
+    GET /api/documents/{document_id}/extract
+
+    Downloads PDF from Cloudinary and extracts text.
+    """
+     collection=request.app.state.db["documents"]
+
+     return await extract_document_text_controller(
+         document_id=document_id,
+         current_user=current_user,
+         collection=collection
+     )
+    
+
+

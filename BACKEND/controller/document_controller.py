@@ -5,7 +5,8 @@ from services.document_service import (
     get_all_documents_service,
     get_document_by_id_service,
     delete_document_service,
-    get_document_file_service
+    get_document_file_service,
+    extract_document_text_service
 
       
 )
@@ -127,4 +128,32 @@ async def get_document_file_controller(
         document_id=document_id,
         user_id=user_id,
         collection=collection
-    )    
+    )  
+
+
+
+
+
+
+async def extract_document_text_controller(
+        document_id:str,
+        current_user:dict,
+        collection
+):
+    user_id=str(current_user["_id"])
+
+    pages=await extract_document_text_service(
+        document_id=document_id,
+        user_id=user_id,
+        collection=collection
+    )
+    
+    return {
+             "document_id": document_id,
+            "total_pages_extracted": len(pages),
+            "pages": pages
+    
+        }
+
+   
+

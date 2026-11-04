@@ -28,6 +28,7 @@ from core.config import (
 )
 
 from models.document_model import create_document_model
+from services.pdf_extraction_service import extract_pdf_text
 
 logger=logging.getLogger(__name__)
 
@@ -613,3 +614,116 @@ async def get_document_file_service(
             "Cache-Control": "private, no-store"
         }
     )
+#-------------------------------------------
+ # 11:extract pdf data 
+#-------------------------
+
+
+async def extract_document_text_service(
+    document_id: str,
+    user_id: str,
+    collection
+):
+    # 1. Validate document ID
+    object_id = validate_document_id(document_id)
+
+    # 2. Verify document ownership
+    document = await collection.find_one({
+        "_id": object_id,
+        "user_id": user_id
+    })
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found"
+        )
+
+    # 3. Verify PDF
+    if document.get("mime_type") != "application/pdf":
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are supported"
+        )
+
+    if document.get("resource_type") != "raw":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid PDF resource type"
+        )
+
+    # 4. Generate Cloudinary download URL
+    try:
+        download_url = await asyncio.to_thread(
+            cloudinary.utils.private_download_url,
+            document["public_id"],
+            "pdf",
+            resource_type="raw",
+            type="authenticated",
+            attachment=False
+        )
+
+    except Exception:
+        logger.exception("Cloudinary URL generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate PDF download URL"
+        )
+
+    # 5. Download PDF bytes
+    def download_pdf():
+        with urllib.request.urlopen(
+            download_url,
+            timeout=60
+        ) as response:
+
+            content = response.read(
+                MAX_FILE_SIZE_BYTES + 1
+            )
+
+            return content
+
+    try:
+        pdf_bytes = await asyncio.to_thread(download_pdf)
+
+    except Exception:
+        logger.exception("PDF download failed")
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to download PDF"
+        )
+
+    # 6. Validate PDF
+    if not pdf_bytes.startswith(b"%PDF"):
+        raise HTTPException(
+            status_code=502,
+            detail="Invalid PDF file"
+        )
+
+    if len(pdf_bytes) > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="PDF exceeds maximum allowed size"
+        )
+
+    # 7. Extract PDF text
+    pages = await asyncio.to_thread(
+        extract_pdf_text,
+        pdf_bytes
+    )
+
+    if not pages:
+         raise HTTPException(
+                status_code=422,
+                detail="No extractable text found in PDF. It may be scanned."
+         )
+   
+    
+
+
+
+    return pages    
+
+
+
+

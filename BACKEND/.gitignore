@@ -11,6 +11,8 @@ wheels/
 .env
 test.jpg
 test_cloudinary.py
+test_pdf_extraction.py
+test.pdf
 .env
 .env.*
 !.env.example
