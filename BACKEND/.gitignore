@@ -8,6 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+test_embeddings.py
 .env
 test.jpg
 test_cloudinary.py
