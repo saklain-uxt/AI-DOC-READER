@@ -29,6 +29,7 @@ from core.config import (
 
 from models.document_model import create_document_model
 from services.pdf_extraction_service import extract_pdf_text
+from services.chunking_service import create_document_chunks
 
 logger=logging.getLogger(__name__)
 
@@ -619,11 +620,33 @@ async def get_document_file_service(
 #-------------------------
 
 
+
+
+# --------------------------------------------------
+# 11. Extract PDF text and generate LangChain chunks
+# --------------------------------------------------
+
 async def extract_document_text_service(
     document_id: str,
     user_id: str,
     collection
 ):
+    """
+    Downloads PDF from Cloudinary, extracts text
+    using PyMuPDF, and generates chunks using LangChain.
+
+    Workflow:
+    1. Validate document ID.
+    2. Verify document ownership.
+    3. Verify PDF file.
+    4. Generate Cloudinary download URL.
+    5. Download PDF bytes.
+    6. Validate PDF.
+    7. Extract text page by page.
+    8. Generate LangChain chunks.
+    9. Return chunks with metadata.
+    """
+
     # 1. Validate document ID
     object_id = validate_document_id(document_id)
 
@@ -664,7 +687,10 @@ async def extract_document_text_service(
         )
 
     except Exception:
-        logger.exception("Cloudinary URL generation failed")
+        logger.exception(
+            "Cloudinary URL generation failed"
+        )
+
         raise HTTPException(
             status_code=500,
             detail="Unable to generate PDF download URL"
@@ -672,6 +698,7 @@ async def extract_document_text_service(
 
     # 5. Download PDF bytes
     def download_pdf():
+
         with urllib.request.urlopen(
             download_url,
             timeout=60
@@ -684,10 +711,13 @@ async def extract_document_text_service(
             return content
 
     try:
-        pdf_bytes = await asyncio.to_thread(download_pdf)
+        pdf_bytes = await asyncio.to_thread(
+            download_pdf
+        )
 
     except Exception:
         logger.exception("PDF download failed")
+
         raise HTTPException(
             status_code=502,
             detail="Unable to download PDF"
@@ -706,24 +736,78 @@ async def extract_document_text_service(
             detail="PDF exceeds maximum allowed size"
         )
 
-    # 7. Extract PDF text
-    pages = await asyncio.to_thread(
-        extract_pdf_text,
-        pdf_bytes
-    )
+    # 7. Extract PDF text using PyMuPDF
+    try:
+        pages = await asyncio.to_thread(
+            extract_pdf_text,
+            pdf_bytes
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc)
+        )
+
+    except Exception:
+        logger.exception("PDF text extraction failed")
+
+        raise HTTPException(
+            status_code=422,
+            detail="Unable to extract PDF text"
+        )
 
     if not pages:
-         raise HTTPException(
-                status_code=422,
-                detail="No extractable text found in PDF. It may be scanned."
-         )
-   
-    
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "No extractable text found in PDF. "
+                "It may be scanned."
+            )
+        )
 
+    # 8. Generate LangChain chunks
+    try:
+        chunks = await asyncio.to_thread(
+            create_document_chunks,
+            pages=pages,
+            document_id=document_id,
+            chunk_size=1000,
+            chunk_overlap=200
+        )
 
+    except Exception:
+        logger.exception("Document chunking failed")
 
-    return pages    
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate document chunks"
+        )
 
+    if not chunks:
+        raise HTTPException(
+            status_code=422,
+            detail="No chunks generated from PDF"
+        )
 
+    # 9. Return extracted text chunks
+    return {
+        "document_id": document_id,
 
+        "total_pages_extracted": len(pages),
 
+        "total_chunks": len(chunks),
+
+        "chunks": [
+            {
+                "chunk_index": chunk.metadata["chunk_index"],
+
+                "page_number": chunk.metadata["page_number"],
+
+                "text": chunk.page_content,
+
+                "metadata": chunk.metadata
+            }
+            for chunk in chunks
+        ]
+    }

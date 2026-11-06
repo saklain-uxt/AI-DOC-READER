@@ -14,6 +14,8 @@ test_cloudinary.py
 test_pdf_extraction.py
 test.pdf
 .env
+tests/
+
 .env.*
 !.env.example
 __pycache__/

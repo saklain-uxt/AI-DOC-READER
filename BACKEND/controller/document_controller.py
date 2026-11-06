@@ -136,24 +136,23 @@ async def get_document_file_controller(
 
 
 async def extract_document_text_controller(
-        document_id:str,
-        current_user:dict,
-        collection
+    document_id: str,
+    current_user: dict,
+    collection
 ):
-    user_id=str(current_user["_id"])
+    user_id = extract_user_id(current_user)
 
-    pages=await extract_document_text_service(
+    result = await extract_document_text_service(
         document_id=document_id,
         user_id=user_id,
         collection=collection
     )
+
+    return result
+
+
     
-    return {
-             "document_id": document_id,
-            "total_pages_extracted": len(pages),
-            "pages": pages
-    
-        }
+
 
    
 
