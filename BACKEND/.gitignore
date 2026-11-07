@@ -9,11 +9,12 @@ wheels/
 # Virtual environments
 .venv
 
-test_embeddings.py
+
 .env
 test.jpg
 test_cloudinary.py
 test_pdf_extraction.py
+test_embeddings.py
 test.pdf
 .env
 tests/

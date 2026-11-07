@@ -30,6 +30,7 @@ from core.config import (
 from models.document_model import create_document_model
 from services.pdf_extraction_service import extract_pdf_text
 from services.chunking_service import create_document_chunks
+from services.embedding_service import generate_embeddings_async
 
 logger=logging.getLogger(__name__)
 
@@ -615,15 +616,11 @@ async def get_document_file_service(
             "Cache-Control": "private, no-store"
         }
     )
-#-------------------------------------------
- # 11:extract pdf data 
-#-------------------------
-
 
 
 
 # --------------------------------------------------
-# 11. Extract PDF text and generate LangChain chunks
+# 11. Extract PDF text, generate chunks and embeddings
 # --------------------------------------------------
 
 async def extract_document_text_service(
@@ -632,8 +629,8 @@ async def extract_document_text_service(
     collection
 ):
     """
-    Downloads PDF from Cloudinary, extracts text
-    using PyMuPDF, and generates chunks using LangChain.
+    Downloads PDF from Cloudinary, extracts text,
+    generates LangChain chunks and creates embeddings.
 
     Workflow:
     1. Validate document ID.
@@ -642,9 +639,11 @@ async def extract_document_text_service(
     4. Generate Cloudinary download URL.
     5. Download PDF bytes.
     6. Validate PDF.
-    7. Extract text page by page.
+    7. Extract PDF text.
     8. Generate LangChain chunks.
-    9. Return chunks with metadata.
+    9. Generate embeddings for every chunk.
+    10. Attach embeddings to chunks.
+    11. Return chunks with embeddings and metadata.
     """
 
     # 1. Validate document ID
@@ -790,7 +789,58 @@ async def extract_document_text_service(
             detail="No chunks generated from PDF"
         )
 
-    # 9. Return extracted text chunks
+    # 9. Generate embeddings for all chunks
+    try:
+
+        # Extract text from LangChain Document objects
+        chunk_texts = [
+            chunk.page_content
+            for chunk in chunks
+        ]
+
+        # Call embedding_service.py
+        embeddings = await generate_embeddings_async(
+            chunk_texts
+        )
+
+        # Validate embedding count
+        if len(embeddings) != len(chunks):
+            raise ValueError(
+                "Number of embeddings does not match number of chunks"
+            )
+
+        # Validate embedding dimensions
+        if any(len(embedding) != 384 for embedding in embeddings):
+            raise ValueError(
+                "Invalid embedding dimensions"
+            )
+
+    except Exception:
+        logger.exception("Embedding generation failed")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate document embeddings"
+        )
+
+    # 10. Attach embeddings to corresponding chunks
+    embedded_chunks = []
+
+    for chunk, embedding in zip(chunks, embeddings):
+
+        embedded_chunks.append({
+            "chunk_index": chunk.metadata["chunk_index"],
+
+            "page_number": chunk.metadata["page_number"],
+
+            "text": chunk.page_content,
+
+            "embedding": embedding,
+
+            "metadata": chunk.metadata
+        })
+
+    # 11. Return chunks with embeddings
     return {
         "document_id": document_id,
 
@@ -798,16 +848,9 @@ async def extract_document_text_service(
 
         "total_chunks": len(chunks),
 
-        "chunks": [
-            {
-                "chunk_index": chunk.metadata["chunk_index"],
+        "embedding_dimension": 384,
 
-                "page_number": chunk.metadata["page_number"],
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
 
-                "text": chunk.page_content,
-
-                "metadata": chunk.metadata
-            }
-            for chunk in chunks
-        ]
+        "chunks": embedded_chunks
     }
