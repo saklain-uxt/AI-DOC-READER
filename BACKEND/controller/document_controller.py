@@ -1,12 +1,14 @@
 from fastapi import HTTPException
 
+
 from services.document_service import (
     upload_document_service,
     get_all_documents_service,
     get_document_by_id_service,
     delete_document_service,
     get_document_file_service,
-    extract_document_text_service
+    extract_document_text_service,
+    index_document_service
 
       
 )
@@ -151,7 +153,29 @@ async def extract_document_text_controller(
     return result
 
 
-    
+
+
+# --------------------------------------------------
+# Index document controller
+# --------------------------------------------------
+
+async def index_document_controller(
+    document_id: str,
+    current_user: dict,
+    documents_collection,
+    vector_collection
+):
+
+    user_id = extract_user_id(current_user)
+
+    result = await index_document_service(
+        document_id=document_id,
+        user_id=user_id,
+        documents_collection=documents_collection,
+        vector_collection=vector_collection
+    )
+
+    return result
 
 
    

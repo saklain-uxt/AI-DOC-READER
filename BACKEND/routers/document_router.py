@@ -12,6 +12,7 @@ from dependencies.auth import get_current_user
 # Existing CSRF protection.
 from core.csrf import verify_csrf
 
+ 
 # Document controllers.
 from controller.document_controller import (
     upload_document_controller,
@@ -19,7 +20,8 @@ from controller.document_controller import (
     get_document_by_id_controller,
     delete_document_controller,
     get_document_file_controller,
-    extract_document_text_controller
+    extract_document_text_controller,
+    index_document_controller
 
 )
 
@@ -189,6 +191,29 @@ async def extract_document_text(
          current_user=current_user,
          collection=collection
      )
+
+
+# --------------------------------------------------
+# POST: Index document
+# --------------------------------------------------
+
+@router.post("/{document_id}/index")
+async def index_document(
+    document_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+
+    documents_collection = request.app.state.db["documents"]
+
+    vector_collection = request.app.state.db["document_chunks"]
+
+    return await index_document_controller(
+        document_id=document_id,
+        current_user=current_user,
+        documents_collection=documents_collection,
+        vector_collection=vector_collection
+    )
     
 
 

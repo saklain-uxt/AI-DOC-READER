@@ -31,6 +31,15 @@ async def lifespan(app: FastAPI):
         await app.state.db["documents"].create_index(
             [("user_id", 1), ("created_at", -1)]
         )
+          # 3. Document chunks collection
+        await app.state.db["document_chunks"].create_index(
+            [
+                ("user_id", 1),
+                ("document_id", 1),
+                ("chunk_index", 1)
+            ],
+            unique=True
+        )
 
         yield
 

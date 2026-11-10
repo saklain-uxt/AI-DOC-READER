@@ -31,6 +31,7 @@ from models.document_model import create_document_model
 from services.pdf_extraction_service import extract_pdf_text
 from services.chunking_service import create_document_chunks
 from services.embedding_service import generate_embeddings_async
+from services.vector_service import store_document_chunks
 
 logger=logging.getLogger(__name__)
 
@@ -853,4 +854,67 @@ async def extract_document_text_service(
         "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
 
         "chunks": embedded_chunks
+    }
+
+
+
+# --------------------------------------------------
+# 12. Index document and store embeddings
+# --------------------------------------------------
+
+async def index_document_service(
+    document_id: str,
+    user_id: str,
+    documents_collection,
+    vector_collection
+):
+    """
+    Generate embeddings and store them in MongoDB.
+
+    Reuses the existing extraction service.
+    """
+
+    # Step 1: Extract text, chunks and embeddings
+    result = await extract_document_text_service(
+        document_id=document_id,
+        user_id=user_id,
+        collection=documents_collection
+    )
+
+    # Step 2: Store embeddings in MongoDB
+    try:
+
+        storage_result = await store_document_chunks(
+            chunks=result["chunks"],
+            document_id=document_id,
+            user_id=user_id,
+            collection=vector_collection
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Failed to store document embeddings"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to store document embeddings"
+        )
+
+    # Step 3: Return indexing summary
+    return {
+        "message": "Document indexed successfully",
+
+        "document_id": document_id,
+
+        "total_pages_extracted": result["total_pages_extracted"],
+
+        "total_chunks": result["total_chunks"],
+
+        "embedding_dimension": result["embedding_dimension"],
+
+        "embedding_model": result["embedding_model"],
+
+        "storage": storage_result
     }
