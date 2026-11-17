@@ -40,6 +40,24 @@ async def lifespan(app: FastAPI):
             ],
             unique=True
         )
+        # Chat conversations collection
+        await app.state.db["conversations"].create_index(
+            [
+                ("user_id", 1),
+                ("updated_at", -1)
+
+            ],
+        )
+
+        # Chat messages collection
+        await app.state.db["chat_messages"].create_index(
+            
+            [
+                ("conversation_id", 1),
+                ("created_at", 1)
+            ]
+        )
+        
 
         yield
 

@@ -1,4 +1,5 @@
 from services.embedding_service import generate_embedding_async
+from typing import Any
 
 
 # -----------------------------------------
@@ -24,7 +25,8 @@ async def semantic_search_service(
     query: str,
     user_id: str,
     collection,
-    document_id: str = None,
+    document_id: str | None=None,
+    document_ids: list[str] | None= None,
     limit: int = DEFAULT_LIMIT
 ):
     """
@@ -37,6 +39,7 @@ async def semantic_search_service(
     """
 
     # Step 1: Validate query
+    #isinstance() is a built-in Python function used to check the data type of a variable.
     if not isinstance(query, str) or not query.strip():
         raise ValueError("Search query cannot be empty")
 
@@ -50,15 +53,30 @@ async def semantic_search_service(
         raise ValueError("Invalid embedding dimensions")
 
     # Step 4: Build search filter
-    search_filter = {
-        "user_id": user_id
+    search_filter:dict[str,Any]={
+        "user_id":user_id
     }
 
-    # Step 5: Apply document filter if provided
     if document_id:
-        search_filter["document_id"] = document_id
+         search_filter["document_id"] = document_id
+
+    elif document_ids:
+        search_filter["document_id"] ={
+             "$in": document_ids
+        }
+   
+
+        
+    
+
 
     # Step 6: Build MongoDB aggregation pipeline
+    #In MongoDB, an aggregation pipeline is a sequence of stages. Each stage performs an operation on the data and passes its output to the next stage.
+    #-----------------------------------------
+    #$vectorSearch → Finds relevant chunks.
+    #$project → Selects the required fields.
+    #---------------------------------------
+    
     pipeline = [
         {
             "$vectorSearch": {
@@ -89,6 +107,8 @@ async def semantic_search_service(
     ]
 
     # Step 7: Execute vector search
+    #aggregate() executes your aggregation pipeline against the collection.
+    #A cursor is an object that lets you retrieve query results.
     cursor = await collection.aggregate(pipeline)
 
     # Step 8: Retrieve results

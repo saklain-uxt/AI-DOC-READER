@@ -6,6 +6,7 @@ from database.database import lifespan
 from routers.auth_router import router as auth_router
 from routers.document_router import router as document_router
 from routers.vector_search_router import router as vector_search_router
+from routers.chat_router import router as chat_router
 
 
 
@@ -29,6 +30,7 @@ app.include_router(
     vector_search_router
  
 )
+app.include_router(chat_router)
 
 
 

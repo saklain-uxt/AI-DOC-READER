@@ -1,0 +1,17 @@
+if mode not in ["document", "global"]:
+    raise ValueError("Invalid conversation mode")
+
+if mode == "document":
+    if not document_id:
+        raise ValueError("Document ID is required")
+
+    document_ids = []
+
+elif mode == "global":
+    document_id = None
+
+    if not document_ids or len(document_ids) < 2:
+        raise ValueError("Select at least two documents")
+
+    if len(document_ids) != len(set(document_ids)):
+        raise ValueError("Duplicate document IDs are not allowed")
