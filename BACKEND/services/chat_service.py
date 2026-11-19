@@ -4,73 +4,20 @@ from bson import ObjectId
 
 from services.vector_search_service import semantic_search_service
 from services.llm_service import generate_llm_response
+from services.conversation_service import create_conversation
+from services.conversation_service import get_conversation
+
+
 
 # --------------------------------------------------
 # 1. CREATE CONVERSATION
 # --------------------------------------------------
 
-async def create_conversation(
-    db,
-    user_id,
-    mode,
-    document_id=None,
-    document_ids=None
-):
-    if mode not in ["document", "global"]:
-        raise ValueError("Invalid conversation mode")
 
-    if mode == "document" and not document_id:
-        raise ValueError("Document ID is required")
-
-    if mode == "global":
-        document_id = None
-
-        if not document_ids or len(document_ids) < 2:
-            raise ValueError("Select at least two documents")
-
-    else:
-        document_ids = []
-
-    now = datetime.now(timezone.utc)
-
-    conversation = {
-        "user_id": user_id,
-        "title": "New Chat",
-        "mode": mode,
-        "document_id": document_id,
-        "document_ids": document_ids or [],
-        "summary": "",
-        "created_at": now,
-        "updated_at": now
-    }
-
-    result = await db["conversations"].insert_one(conversation)
-
-    conversation["_id"] = result.inserted_id
-
-    return conversation
 
 # --------------------------------------------------
 # 2. GET CONVERSATION
 # --------------------------------------------------
-
-async def get_conversation(
-    db,
-    conversation_id,
-    user_id
-):
-    if not ObjectId.is_valid(conversation_id):
-        raise ValueError("Invalid conversation ID")
-
-    conversation = await db["conversations"].find_one({
-        "_id": ObjectId(conversation_id),
-        "user_id": user_id
-    })
-
-    if not conversation:
-        raise ValueError("Conversation not found")
-
-    return conversation
 
 # --------------------------------------------------
 # 3. BUILD PDF CONTEXT
